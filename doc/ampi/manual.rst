@@ -562,10 +562,177 @@ executed without privatization on AMPI, all the AMPI threads that reside
 in the same process will access the same copy of such variables, which
 is clearly not the desired semantics. To ensure correct execution of the
 original source program, it is necessary to make such variables
-"private" to individual threads. We provide three choices with varying
-degrees of developer effort required and varying degrees of portability:
-manual encapsulation of global state, a thread-local storage based
-automated mechanism, and global offset table based automated mechanism.
+"private" to individual threads. We provide several choices with varying
+degrees of developer effort required and varying degrees of portability.
+
+Manual Code Editing
+~~~~~~~~~~~~~~~~~~~
+
+With regard to performance and portability, the ideal approach to resolve
+the global variable problem is to refactor your code to avoid use of
+globals entirely. However, this comes with the obvious caveat that it
+requires developer time to implement and can involve invasive changes
+across the entire codebase, similar to converting a shared library to be
+reentrant in order to allow multiple instantiations from the same OS
+process. If these costs are a significant barrier to entry, it can be
+helpful to instead explore one of the simpler transformations or fully
+automated methods described below.
+
+We have employed a strategy of argument passing to do this privatization
+transformation. That is, the global variables are bunched together in a
+single user-defined type, which is allocated by each thread dynamically
+or on the stack. Then a pointer to this type is passed from subroutine
+to subroutine as an argument. Since the subroutine arguments are passed
+on the stack, which is not shared across all threads, each subroutine
+when executing within a thread operates on a private copy of the global
+variables.
+
+This scheme is demonstrated in the following examples. The original
+Fortran90 code contains a module ``shareddata``. This module is used in
+the ``MPI_MAIN`` subroutine and a subroutine ``subA``. Note that
+``PROGRAM PGM`` was renamed to ``SUBROUTINE MPI_MAIN`` and ``END PROGRAM``
+was renamed to ``END SUBROUTINE``.
+
+.. code-block:: fortran
+
+   !FORTRAN EXAMPLE
+   MODULE shareddata
+     INTEGER :: myrank
+     DOUBLE PRECISION :: xyz(100)
+   END MODULE
+
+   SUBROUTINE MPI_MAIN                               ! Previously PROGRAM PGM
+     USE shareddata
+     include 'mpif.h'
+     INTEGER :: i, ierr
+     CALL MPI_Init(ierr)
+     CALL MPI_Comm_rank(MPI_COMM_WORLD, myrank, ierr)
+     DO i = 1, 100
+       xyz(i) =  i + myrank
+     END DO
+     CALL subA
+     CALL MPI_Finalize(ierr)
+   END SUBROUTINE                                    ! Previously END PROGRAM
+
+   SUBROUTINE subA
+     USE shareddata
+     INTEGER :: i
+     DO i = 1, 100
+       xyz(i) = xyz(i) + 1.0
+     END DO
+   END SUBROUTINE
+
+.. code-block:: c++
+
+   //C Example
+   #include <mpi.h>
+
+   int myrank;
+   double xyz[100];
+
+   void subA();
+   int main(int argc, char** argv){
+     int i;
+     MPI_Init(&argc, &argv);
+     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+     for(i=0;i<100;i++)
+       xyz[i] = i + myrank;
+     subA();
+     MPI_Finalize();
+   }
+
+   void subA(){
+     int i;
+     for(i=0;i<100;i++)
+       xyz[i] = xyz[i] + 1.0;
+   }
+
+AMPI executes the main subroutine inside a user-level thread as a
+subroutine.
+
+Now we transform this program using the argument passing strategy. We
+first group the shared data into a user-defined type.
+
+.. code-block:: fortran
+
+   !FORTRAN EXAMPLE
+   MODULE shareddata
+     TYPE chunk ! modified
+       INTEGER :: myrank
+       DOUBLE PRECISION :: xyz(100)
+     END TYPE ! modified
+   END MODULE
+
+.. code-block:: c++
+
+   //C Example
+   struct shareddata{
+     int myrank;
+     double xyz[100];
+   };
+
+Now we modify the main subroutine to dynamically allocate this data and
+change the references to them. Subroutine ``subA`` is then modified to
+take this data as argument.
+
+.. code-block:: fortran
+
+   !FORTRAN EXAMPLE
+   SUBROUTINE MPI_Main
+     USE shareddata
+     USE AMPI
+     INTEGER :: i, ierr
+     TYPE(chunk), pointer :: c ! modified
+     CALL MPI_Init(ierr)
+     ALLOCATE(c) ! modified
+     CALL MPI_Comm_rank(MPI_COMM_WORLD, c%myrank, ierr)
+     DO i = 1, 100
+       c%xyz(i) =  i + c%myrank ! modified
+     END DO
+     CALL subA(c)
+     CALL MPI_Finalize(ierr)
+   END SUBROUTINE
+
+   SUBROUTINE subA(c)
+     USE shareddata
+     TYPE(chunk) :: c ! modified
+     INTEGER :: i
+     DO i = 1, 100
+       c%xyz(i) = c%xyz(i) + 1.0 ! modified
+     END DO
+   END SUBROUTINE
+
+.. code-block:: c++
+
+   //C Example
+   void MPI_Main{
+     int i,ierr;
+     struct shareddata *c;
+     ierr = MPI_Init();
+     c = (struct shareddata*)malloc(sizeof(struct shareddata));
+     ierr = MPI_Comm_rank(MPI_COMM_WORLD, c.myrank);
+     for(i=0;i<100;i++)
+       c.xyz[i] = i + c.myrank;
+     subA(c);
+     ierr = MPI_Finalize();
+   }
+
+   void subA(struct shareddata *c){
+     int i;
+     for(i=0;i<100;i++)
+       c.xyz[i] = c.xyz[i] + 1.0;
+   }
+
+With these changes, the above program can be made thread-safe. Note that
+it is not really necessary to dynamically allocate ``chunk``. One could
+have declared it as a local variable in subroutine ``MPI_Main``. (Or for
+a small example such as this, one could have just removed the
+``shareddata`` module, and instead declared both variables ``xyz`` and
+``myrank`` as local variables). This is indeed a good idea if shared
+data are small in size. For large shared data, it would be better to do
+heap allocation because in AMPI, the stack sizes are fixed at the
+beginning (and can be specified from the command line) and stacks do not
+grow dynamically.
 
 Automatic Thread-Local Storage Swapping
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -755,174 +922,19 @@ it does not handle static variables, has a context switching overhead
 that grows with the number of global variables, and is incompatible with
 SMP builds of AMPI, where multiple virtual ranks can execute
 simultaneously on different scheduler threads within an OS process.
+
 Currently, this feature only works on x86 and x86_64 platforms that
 fully support ELF, and it requires ld version 2.23 or older, or else a
 patched version of ld 2.24+ that we provide here:
 https://charm.cs.illinois.edu/gerrit/gitweb?p=libbfd-patches.git;a=tree;f=swapglobals
 
-Manual Code Editing
-~~~~~~~~~~~~~~~~~~~
-
-We have employed a strategy of argument passing to do this privatization
-transformation. That is, the global variables are bunched together in a
-single user-defined type, which is allocated by each thread dynamically
-or on the stack. Then a pointer to this type is passed from subroutine
-to subroutine as an argument. Since the subroutine arguments are passed
-on the stack, which is not shared across all threads, each subroutine
-when executing within a thread operates on a private copy of the global
-variables.
-
-This scheme is demonstrated in the following examples. The original
-Fortran90 code contains a module ``shareddata``. This module is used in
-the ``MPI_MAIN`` subroutine and a subroutine ``subA``. Note that
-``PROGRAM PGM`` was renamed to ``SUBROUTINE MPI_MAIN`` and ``END PROGRAM``
-was renamed to ``END SUBROUTINE``.
-
-.. code-block:: fortran
-
-   !FORTRAN EXAMPLE
-   MODULE shareddata
-     INTEGER :: myrank
-     DOUBLE PRECISION :: xyz(100)
-   END MODULE
-
-   SUBROUTINE MPI_MAIN                               ! Previously PROGRAM PGM
-     USE shareddata
-     include 'mpif.h'
-     INTEGER :: i, ierr
-     CALL MPI_Init(ierr)
-     CALL MPI_Comm_rank(MPI_COMM_WORLD, myrank, ierr)
-     DO i = 1, 100
-       xyz(i) =  i + myrank
-     END DO
-     CALL subA
-     CALL MPI_Finalize(ierr)
-   END SUBROUTINE                                    ! Previously END PROGRAM
-
-   SUBROUTINE subA
-     USE shareddata
-     INTEGER :: i
-     DO i = 1, 100
-       xyz(i) = xyz(i) + 1.0
-     END DO
-   END SUBROUTINE
-
-.. code-block:: c++
-
-   //C Example
-   #include <mpi.h>
-
-   int myrank;
-   double xyz[100];
-
-   void subA();
-   int main(int argc, char** argv){
-     int i;
-     MPI_Init(&argc, &argv);
-     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-     for(i=0;i<100;i++)
-       xyz[i] = i + myrank;
-     subA();
-     MPI_Finalize();
-   }
-
-   void subA(){
-     int i;
-     for(i=0;i<100;i++)
-       xyz[i] = xyz[i] + 1.0;
-   }
-
-AMPI executes the main subroutine inside a user-level thread as a
-subroutine.
-
-Now we transform this program using the argument passing strategy. We
-first group the shared data into a user-defined type.
-
-.. code-block:: fortran
-
-   !FORTRAN EXAMPLE
-   MODULE shareddata
-     TYPE chunk ! modified
-       INTEGER :: myrank
-       DOUBLE PRECISION :: xyz(100)
-     END TYPE ! modified
-   END MODULE
-
-.. code-block:: c++
-
-   //C Example
-   struct shareddata{
-     int myrank;
-     double xyz[100];
-   };
-
-Now we modify the main subroutine to dynamically allocate this data and
-change the references to them. Subroutine ``subA`` is then modified to
-take this data as argument.
-
-.. code-block:: fortran
-
-   !FORTRAN EXAMPLE
-   SUBROUTINE MPI_Main
-     USE shareddata
-     USE AMPI
-     INTEGER :: i, ierr
-     TYPE(chunk), pointer :: c ! modified
-     CALL MPI_Init(ierr)
-     ALLOCATE(c) ! modified
-     CALL MPI_Comm_rank(MPI_COMM_WORLD, c%myrank, ierr)
-     DO i = 1, 100
-       c%xyz(i) =  i + c%myrank ! modified
-     END DO
-     CALL subA(c)
-     CALL MPI_Finalize(ierr)
-   END SUBROUTINE
-
-   SUBROUTINE subA(c)
-     USE shareddata
-     TYPE(chunk) :: c ! modified
-     INTEGER :: i
-     DO i = 1, 100
-       c%xyz(i) = c%xyz(i) + 1.0 ! modified
-     END DO
-   END SUBROUTINE
-
-.. code-block:: c++
-
-   //C Example
-   void MPI_Main{
-     int i,ierr;
-     struct shareddata *c;
-     ierr = MPI_Init();
-     c = (struct shareddata*)malloc(sizeof(struct shareddata));
-     ierr = MPI_Comm_rank(MPI_COMM_WORLD, c.myrank);
-     for(i=0;i<100;i++)
-       c.xyz[i] = i + c.myrank;
-     subA(c);
-     ierr = MPI_Finalize();
-   }
-
-   void subA(struct shareddata *c){
-     int i;
-     for(i=0;i<100;i++)
-       c.xyz[i] = c.xyz[i] + 1.0;
-   }
-
-With these changes, the above program can be made thread-safe. Note that
-it is not really necessary to dynamically allocate ``chunk``. One could
-have declared it as a local variable in subroutine ``MPI_Main``. (Or for
-a small example such as this, one could have just removed the
-``shareddata`` module, and instead declared both variables ``xyz`` and
-``myrank`` as local variables). This is indeed a good idea if shared
-data are small in size. For large shared data, it would be better to do
-heap allocation because in AMPI, the stack sizes are fixed at the
-beginning (and can be specified from the command line) and stacks do not
-grow dynamically.
+For these reasons, and because more robust privatization methods are
+available, swapglobals is considered deprecated.
 
 Source-to-Source Transformation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Another approach is to do the changes described in the previous scheme
+One final approach is to do the changes described in the previous scheme
 automatically. It means that we can use a tool to transform the source
 code to move global or static variables in an object and pass them
 around. This approach is portable across systems and compilers and may
@@ -948,11 +960,11 @@ different schemes.
    ==================== ===== ====== ==== ======= === ====== ===== =====
    Privatization Scheme Linux Mac OS BG/Q Windows x86 x86_64 PPC   ARM7
    ==================== ===== ====== ==== ======= === ====== ===== =====
+   Manual Code Editing  Yes   Yes    Yes  Yes     Yes Yes    Yes   Yes
    TLS-Globals          Yes   Yes    No   Maybe   Yes Yes    Maybe Maybe
    PiP-Globals          Yes   No     No   No      Yes Yes    Yes   Yes
-   FS-Globals           Yes   Yes    No   Maybe   Yes Yes    Yes   Yes
+   FS-Globals           Yes   Yes    No   Yes     Yes Yes    Yes   Yes
    GOT-Globals          Yes   No     No   No      Yes Yes    Yes   Yes
-   Manual Code Editing  Yes   Yes    Yes  Yes     Yes Yes    Yes   Yes
    ==================== ===== ====== ==== ======= === ====== ===== =====
 
 Extensions
