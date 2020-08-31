@@ -1693,6 +1693,7 @@ bool ampiParent::kv_set_builtin(int keyval, void* attribute_val) noexcept {
     case AMPI_NUM_WTHS:         /*immutable*/ return false;
     case AMPI_MY_PROCESS:       /*immutable*/ return false;
     case AMPI_NUM_PROCESSES:    /*immutable*/ return false;
+    case AMPI_MY_HOME_WTH:      /*immutable*/ return false;
     default: return false;
   };
 }
@@ -1734,6 +1735,7 @@ bool ampiParent::getBuiltinAttribute(int keyval, void *attribute_val) noexcept {
       case AMPI_NUM_WTHS: *(int *)attribute_val = CkNumPes(); return true;
       case AMPI_MY_PROCESS: *(int *)attribute_val = CkMyNode(); return true;
       case AMPI_NUM_PROCESSES: *(int *)attribute_val = CkNumNodes(); return true;
+      case AMPI_MY_HOME_WTH: *(int *)attribute_val = thisArray->homePe(ckGetArrayIndex()); return true;
     }
   }
   return false;
@@ -11546,6 +11548,14 @@ int AMPI_Load_set_value(double value)
   AMPI_API("AMPI_Load_set_value", value);
   ampiParent *ptr = getAmpiParent();
   ptr->setObjTime(value);
+  return MPI_SUCCESS;
+}
+
+CLINKAGE int AMPI_Load_set_phase(int phase)
+{
+  AMPI_API("AMPI_Load_set_phase", phase);
+  ampiParent *ptr = getAmpiParent();
+  ptr->CkLBSetPhase(phase);
   return MPI_SUCCESS;
 }
 
