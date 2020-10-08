@@ -652,6 +652,7 @@ configure_file(src/arch/util/lrtslock.h                      include/ COPYONLY)
 configure_file(src/arch/util/mempool.h                       include/ COPYONLY)
 configure_file(src/arch/util/machine.h                       include/ COPYONLY)
 configure_file(src/arch/util/machine-lrts.h                  include/ COPYONLY)
+configure_file(src/arch/util/machine-rdma.h                  include/ COPYONLY)
 configure_file(src/arch/util/machine-smp.h                   include/ COPYONLY)
 configure_file(src/arch/util/pcqueue.h                       include/ COPYONLY)
 configure_file(src/util/pup_c_functions.h                    include/ COPYONLY)
@@ -960,7 +961,7 @@ foreach(l CUDA_DIR BUILD_CUDA CMK_AMPI_WITH_ROMIO CMK_MACOSX CMK_BLUEGENEQ CMK_B
         CMK_LUSTREAPI CMK_MULTICORE CMK_UTH CMK_NO_BUILD_SHARED CMK_NO_PARTITIONS
         CMK_SHARED_SUF CMK_SMP CMK_SUPPORTS_FSGLOBALS CMK_SUPPORTS_PIPGLOBALS
         CMK_TRACE_ENABLED CMK_USE_LRTS CMK_VDIR OPTSATBUILDTIME CMK_AMPI_ONLY CMK_WINDOWS
-        CMK_USER_SUFFIX CMK_CAN_LINK_FORTRAN CMK_SUPPORTS_MEMORY_ISOMALLOC)
+        CMK_USE_CMA CMK_USER_SUFFIX CMK_CAN_LINK_FORTRAN CMK_SUPPORTS_MEMORY_ISOMALLOC)
     file(APPEND ${optfile_mak} "${l}:=${${l}}\n" )
 endforeach(l)
 
@@ -1075,9 +1076,10 @@ add_custom_target(create_symlinks ALL
 
                   COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_BINARY_DIR}/include ${CMAKE_BINARY_DIR}/tmp
 
-                  COMMAND test -d ${CMAKE_BINARY_DIR}/benchmarks || env SYSTEMLN='${SYSTEMLN}' ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/benchmarks ${CMAKE_BINARY_DIR}/benchmarks && true
-                  COMMAND test -d ${CMAKE_BINARY_DIR}/examples || env SYSTEMLN='${SYSTEMLN}' ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/examples ${CMAKE_BINARY_DIR}/examples && true
-                  COMMAND test -d ${CMAKE_BINARY_DIR}/tests || env SYSTEMLN='${SYSTEMLN}' ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests && true
+                  COMMAND test -d ${CMAKE_BINARY_DIR}/benchmarks || env SYSTEMLN=${SYSTEMLN} ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/benchmarks ${CMAKE_BINARY_DIR}/benchmarks && true
+                  COMMAND test -d ${CMAKE_BINARY_DIR}/examples || env SYSTEMLN=${SYSTEMLN} ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/examples ${CMAKE_BINARY_DIR}/examples && true
+                  COMMAND test -d ${CMAKE_BINARY_DIR}/tests || env SYSTEMLN=${SYSTEMLN} ${CMAKE_SOURCE_DIR}/src/scripts/gathertree ${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests && true
+                  VERBATIM
                  )
 
 # if(CMK_WINDOWS)
