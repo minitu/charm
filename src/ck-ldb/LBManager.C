@@ -13,6 +13,8 @@
 #include "TreeLB.h"
 #include "topology.h"
 
+#include "json.hpp"
+
 CkGroupID _lbmgr;
 
 CkpvDeclare(LBUserDataLayout, lbobjdatalayout);
@@ -235,7 +237,7 @@ void _loadbalancerInit()
         else if (strcmp(balancer, "GreedyRefineLB") == 0)
           legacyBalancer = "GreedyRefine";
         else if (strcmp(balancer, "RefineLB") == 0)
-          legacyBalancer = "RefineA";
+        legacyBalancer = "RefineA";
         else if (strcmp(balancer, "RandCentLB") == 0)
           legacyBalancer = "Random";
         else if (strcmp(balancer, "DummyLB") == 0)

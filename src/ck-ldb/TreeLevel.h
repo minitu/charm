@@ -33,8 +33,10 @@ class LBStatsMsg_1 : public TreeLBMessage, public CMessage_LBStatsMsg_1
 
   // Dimension of vector loads in this msg. Note that this can be 0. Object loads are
   // stored as (regular walltime, <vector load>) where dimension gives the size of <vector
-  // load>.
-  unsigned int dimension;
+  // load>. This can be -1 if there are no objects on this PE, in which case the value of
+  // dimension in another dimension will determine the dimension of the new message when
+  // merging.
+  int dimension;
 
   int* pe_ids;              // IDs of the pes in this msg
   float* bgloads;           // bgloads[i] is background load of i-th pe in this msg
@@ -57,13 +59,22 @@ class LBStatsMsg_1 : public TreeLBMessage, public CMessage_LBStatsMsg_1
     // matter
     unsigned int nObjs = 0;
     unsigned int nPes = 0;
-    unsigned int dimension = ((LBStatsMsg_1*)msgs[0])->dimension;
+
+    int dimension = -1;
+    for (const auto& msg : msgs)
+    {
+      if (((LBStatsMsg_1*)msgs[0])->dimension > -1)
+      {
+        dimension = ((LBStatsMsg_1*)msgs[0])->dimension;
+        break;
+      }
+    }
     for (int i = 0; i < msgs.size(); i++)
     {
       LBStatsMsg_1* msg = (LBStatsMsg_1*)msgs[i];
       nObjs += msg->nObjs;
       nPes += msg->nPes;
-      CkAssert(dimension == msg->dimension);
+      CkAssert(dimension == msg->dimension || msg->nObjs == 0);
     }
 
     LBStatsMsg_1* newMsg;
@@ -73,6 +84,7 @@ class LBStatsMsg_1 : public TreeLBMessage, public CMessage_LBStatsMsg_1
       newMsg = new (nPes, nPes, 0, nPes + 1, nObjs * (1 + dimension)) LBStatsMsg_1;
     newMsg->nObjs = nObjs;
     newMsg->nPes = nPes;
+    newMsg->dimension = dimension;
     int pe_cnt = 0;
     int load_cnt = 0;
     for (int i = 0; i < msgs.size(); i++)
@@ -104,6 +116,19 @@ class LBStatsMsg_1 : public TreeLBMessage, public CMessage_LBStatsMsg_1
     int pe_cnt = 0;
     int obj_cnt = 0;
     float total_load = 0;
+
+    int dimension = -1;
+    for (const auto& treeMsg : msgs)
+    {
+      LBStatsMsg_1* msg = (LBStatsMsg_1*)treeMsg;
+      if (msg->dimension > -1)
+      {
+        dimension = msg->dimension;
+        break;
+      }
+    }
+    CkAssert(objs.empty() || dimension > -1);
+
     for (int i = 0; i < msgs.size(); i++)
     {
       LBStatsMsg_1* msg = (LBStatsMsg_1*)msgs[i];
@@ -116,7 +141,7 @@ class LBStatsMsg_1 : public TreeLBMessage, public CMessage_LBStatsMsg_1
         migMsg->obj_start[pe] = obj_cnt;
         int local_id = 0;
         for (int k = msg->obj_start[j]; k < msg->obj_start[j + 1];
-             k += 1 + msg->dimension, obj_cnt++, local_id++)
+             k += 1 + dimension, obj_cnt++, local_id++)
         {
           objs[obj_cnt].populate(obj_cnt, msg->oloads + k, pe);
           total_load += objs[obj_cnt].getLoad();
@@ -471,7 +496,9 @@ class RootLevel : public LevelLogic
    * mode 0: receive obj stats
    * mode 1: receive aggregated group load
    */
-  virtual void configure(bool rateAware, json& config)
+  virtual void configure(bool rateAware, std::vector<std::string> strategies,
+                         json& config, bool repeat_strategies = false,
+                         bool token_passing = true)
   {
     using namespace TreeStrategy;
     for (auto v : wrappers)
@@ -485,7 +512,7 @@ class RootLevel : public LevelLogic
     if (num_groups == -1)
     {
       current_strategy = 0;
-      for (const std::string& strategy_name : config["strategies"])
+      for (const std::string& strategy_name : strategies)
       {
         if (rateAware)
         {
@@ -538,18 +565,11 @@ class RootLevel : public LevelLogic
                                   strategy_name, true, config[strategy_name])});
         }
       }
-      repeat_strategies = true;
-      const auto& option = config.find("repeat_strategies");
-      if (option != config.end()) repeat_strategies = *option;
+      this->repeat_strategies = repeat_strategies;
     }
     else
     {
-      const auto& option = config.find("strategies");
-      if (option != config.end())
-      {
-        const std::string& strategy_name = config["strategies"][0];
-        if (strategy_name == "dummy") group_strategy_dummy = true;
-      }
+      group_strategy_dummy = !token_passing;
     }
   }
 
@@ -584,8 +604,19 @@ class RootLevel : public LevelLogic
     {
       // msg has object loads
       CkAssert(wrappers.size() > current_strategy);
-      const auto dimension = ((LBStatsMsg_1*)stats_msgs[0])->dimension;
-      CkAssert(dimension <= 10);
+
+      int dimension = -1;
+      for (const auto& treeMsg : stats_msgs)
+      {
+        LBStatsMsg_1* msg = (LBStatsMsg_1*)treeMsg;
+        if (msg->dimension > -1)
+        {
+          dimension = msg->dimension;
+          break;
+        }
+      }
+      CkAssert(nObjs == 0 || (dimension > -1 && dimension <= 10));
+
       IStrategyWrapper* wrapper = wrappers[current_strategy][dimension];
       CkAssert(wrapper != nullptr);
       CkAssert(nPes == CkNumPes());
@@ -730,13 +761,15 @@ class NodeSetLevel : public LevelLogic
     for (auto w : wrappers) delete w;
   }
 
-  virtual void configure(bool rateAware, json& config, int _cutoff_freq = 1)
+  virtual void configure(bool rateAware, std::vector<std::string> strategies,
+                         json& config, bool repeat_strategies = false,
+                         int _cutoff_freq = 1)
   {
     using namespace TreeStrategy;
     for (auto w : wrappers) delete w;
     wrappers.clear();
     current_strategy = 0;
-    for (const std::string& strategy_name : config["strategies"])
+    for (const std::string& strategy_name : strategies)
     {
       if (rateAware)
       {
@@ -749,9 +782,7 @@ class NodeSetLevel : public LevelLogic
             strategy_name, false, config[strategy_name]));
       }
     }
-    repeat_strategies = true;
-    const auto& option = config.find("repeat_strategies");
-    if (option != config.end()) repeat_strategies = *option;
+    this->repeat_strategies = repeat_strategies;;
     cutoff_freq = _cutoff_freq;
     CkAssert(cutoff_freq > 0);
   }
@@ -984,13 +1015,15 @@ class NodeLevel : public LevelLogic
     for (auto w : wrappers) delete w;
   }
 
-  virtual void configure(bool rateAware, json& config, int _cutoff_freq = 1)
+  virtual void configure(bool rateAware, std::vector<std::string> strategies,
+                         json& config, bool repeat_strategies = false,
+                         int _cutoff_freq = 1)
   {
     using namespace TreeStrategy;
     for (auto w : wrappers) delete w;
     wrappers.clear();
     current_strategy = 0;
-    for (const std::string& strategy_name : config["strategies"])
+    for (const std::string& strategy_name : strategies)
     {
       if (rateAware)
       {
@@ -1003,9 +1036,7 @@ class NodeLevel : public LevelLogic
             strategy_name, false, config[strategy_name]));
       }
     }
-    repeat_strategies = true;
-    const auto& option = config.find("repeat_strategies");
-    if (option != config.end()) repeat_strategies = *option;
+    this->repeat_strategies = repeat_strategies;
     cutoff_freq = _cutoff_freq;
     CkAssert(cutoff_freq > 0);
   }
@@ -1140,10 +1171,9 @@ class PELevel : public LevelLogic
 
     // Currently assumes that every object sent to LB has the same dimension
     // TODO: Allow for different dimensions
-    // Assumes that every PE has at least one object for LB
     // If dimension is 0, then phases are not being used
-    CkAssert(nobjs > 0);
-    const auto dimension = myObjs[0].vectorLoad.size();
+    // If there are no objects, set dimension to -1
+    const auto dimension = (nobjs == 0) ? -1 : myObjs[0].vectorLoad.size();
     const auto nobjLoads = nobjs * (1 + dimension);
 
     // TODO verify that non-migratable objects are not added to msg and are only counted
