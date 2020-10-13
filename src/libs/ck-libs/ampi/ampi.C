@@ -10004,6 +10004,8 @@ AMPI_API_IMPL(int, MPI_File_create_errhandler, MPI_File_errhandler_function *fun
   return MPI_SUCCESS;
 }
 
+#if !CMK_AMPI_WITH_ROMIO
+// Disable ROMIO's get_errh.c and set_errh.c when implementing these.
 AMPI_API_IMPL(int, MPI_File_set_errhandler, MPI_File file, MPI_Errhandler errhandler)
 {
   AMPI_API("AMPI_File_set_errhandler", file, errhandler);
@@ -10015,6 +10017,7 @@ AMPI_API_IMPL(int, MPI_File_get_errhandler, MPI_File file, MPI_Errhandler *errha
   AMPI_API("AMPI_File_get_errhandler", file, errhandler);
   return MPI_SUCCESS;
 }
+#endif
 
 AMPI_API_IMPL(int, MPI_Errhandler_create, MPI_Handler_function *function, MPI_Errhandler *errhandler)
 {
