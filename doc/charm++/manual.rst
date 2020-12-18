@@ -2510,10 +2510,12 @@ See ``examples/charm++/PUP/HeapPUP``
 Load Balancing
 --------------
 
-Load balancing in Charm++ is enabled by its ability to place, or
-migrate, chares or chare array elements. Typical application usage to
-exploit this feature will construct many more chares than processors,
-and enable their runtime migration.
+Load balancing in Charm++ is enabled by its ability to place and
+migrate chares (note that only chare array elements are relocatable
+via migration, singleton chares can be created on a particular PE via
+seed balancing to balance load). Typical application usage to exploit
+this feature will construct many more chares than processors, and
+enable their runtime migration.
 
 Iterative applications, which are commonplace in physical simulations,
 are the most suitable target for Charm++’s measurement based load
@@ -2555,23 +2557,27 @@ Examples are in ``examples/charm++/load_balancing`` and
 Measurement-based Object Migration Strategies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In Charm++, objects (except groups, nodegroups) can migrate from
-processor to processor at runtime. Object migration can potentially
-improve the performance of the parallel program by migrating objects
-from overloaded processors to underloaded ones.
+In Charm++, chare array elements can migrate from processor to
+processor at runtime. Object migration can potentially improve the
+performance of the parallel program by migrating objects from
+overloaded processors to underloaded ones.
 
 Charm++ implements a generic, measurement-based load balancing framework
 which automatically instruments all Charm++ objects, collects
 computation load and communication structure during execution and stores
-them into a load balancing database. Charm++ then provides a collection
-of load balancing strategies whose job it is to decide on a new mapping
-of objects to processors based on the information from the database.
-Such measurement based strategies are efficient when we can reasonably
-assume that objects in a Charm++ application tend to exhibit temporal
-correlation in their computation and communication patterns, i.e. future
-can be to some extent predicted using the historical measurement data,
-allowing effective measurement-based load balancing without
-application-specific knowledge.
+them into a load balancing database (this only happens when a load
+balancer is linked into the application; if no LB is used, this
+measurement does not happen).
+
+Charm++ then provides a collection of load balancing strategies whose
+job it is to decide on a new mapping of objects to processors based on
+the information from the database. Such measurement based strategies
+are efficient when we can reasonably assume that objects in a Charm++
+application tend to exhibit temporal correlation in their computation
+and communication patterns, i.e. that the future can be to some extent
+predicted using the historical measurement data, allowing effective
+measurement-based load balancing without application-specific
+knowledge.
 
 Two key terms in the Charm++ load balancing framework are:
 
