@@ -2562,12 +2562,17 @@ processor at runtime. Object migration can potentially improve the
 performance of the parallel program by migrating objects from
 overloaded processors to underloaded ones.
 
-Charm++ implements a generic, measurement-based load balancing framework
-which automatically instruments all Charm++ objects, collects
-computation load and communication structure during execution and stores
-them into a load balancing database (this only happens when a load
-balancer is linked into the application; if no LB is used, this
-measurement does not happen).
+Charm++ implements a generic, measurement-based load balancing
+framework which automatically instruments all Charm++ objects,
+collecting computational load and communication structure during
+execution and storing them into a load balancing database (this only
+happens when a load balancer is linked into the application; if no LB
+is used, this measurement does not happen). This instrumentation
+starts automatically at the beginning of application execution by
+default. It can be disabled at startup by passing the *+LBOff* flag at
+runtime, and toggled from the application by calling
+``LBTurnInstrumentOn()`` and ``LBTurnInstrumentOff()``, enabling or
+disabling instrumentation on the calling PE.
 
 Charm++ then provides a collection of load balancing strategies whose
 job it is to decide on a new mapping of objects to processors based on
@@ -2578,6 +2583,12 @@ and communication patterns, i.e. that the future can be to some extent
 predicted using the historical measurement data, allowing effective
 measurement-based load balancing without application-specific
 knowledge.
+
+The instrumentation stored in the load balancing database is cleared
+immediately following each time load balancing completes. This means
+that each invocation of load balancing uses only data measured since
+the last invocation, providing adaptive and responsive results even
+for dynamic applications.
 
 Two key terms in the Charm++ load balancing framework are:
 
