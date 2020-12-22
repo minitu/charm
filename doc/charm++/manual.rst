@@ -2592,153 +2592,146 @@ for dynamic applications.
 
 Two key terms in the Charm++ load balancing framework are:
 
--  Load balancing database provides the interface of almost all load
-   balancing calls. On each processor, it stores the load balancing
-   instrumented data and coordinates the load balancing manager and
-   balancer. It is implemented as a Chare Group called LBDatabase.
+- The **load balancing manager** provides the interface of almost all
+  load balancing calls. On each processor, it manages load balancing
+  database, which stores the instrumented load data, and controls and
+  invokes the selected load balancing strategies. It is implemented as
+  a chare group called ``LBManager``.
 
--  Load balancer or strategy takes the load balancing database and
-   produces the new mapping of the objects. In Charm++, it is
-   implemented as Chare Group inherited from BaseLB. Three kinds of
-   schemes are implemented: (a) centralized load balancers, (b) fully
-   distributed load balancers and (c) hierarchical load balancers.
+- A **load balancing strategy** gathers the relevant load data, runs a
+  decision algorithm and produces the new mapping of the
+  objects. Charm++ supports several kinds of strategies:
+
+  a. Configurable, hierarchical load balancers using TreeLB
+  b. Fully distributed load balancers
+  c. *(deprecated)* Centralized load balancers using CentralLB
+  d. *(deprecated)* Hierarchical load balancers using HybridBaseLB
 
 .. _lbStrategy:
 
 Available Load Balancing Strategies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Load balancing can be performed in either a centralized, a fully
-distributed, or an hierarchical fashion.
+TreeLB and its pluggable strategies supersede the previous
+implementations of centralized and hierarchical load balancing. To use
+TreeLB, the user selects one of several trees. Each level corresponds
+to a different division of the overall execution (e.g. PE,
+process). Each level is configurable with a list of strategies,
+frequency, and other parameters. See :numref:`treeLb` below for more
+detail, along with configuration and execution instructions. The
+following strategies can be used with TreeLB (the old runtime
+selection syntax still works and is specified in parentheses):
 
-In centralized approaches, the entire machine’s load and communication
-structure are accumulated to a single point, typically processor 0,
-followed by a decision making process to determine the new distribution
-of Charm++ objects. Centralized load balancing requires synchronization
-which may incur an overhead and delay. However, due to the fact that the
-decision process has a high degree of the knowledge about the entire
-platform, it tends to be more accurate.
+- **Greedy**: Uses a greedy algorithm that iterates over the objects
+  and assigns the heaviest remaining object to the least loaded
+  processor. (Old: ``+balancer GreedyLB``)
 
-In distributed approaches, load data is only exchanged among neighboring
-processors. There is no global synchronization. However, they will not,
-in general, provide an immediate restoration for load balance - the
-process is iterated until the load balance can be achieved.
+- **GreedyRefine**: Uses a greedy algorithm that assigns the heaviest
+  remaining object to the least loaded processor when it is currently
+  assigned to a heavily loaded processor, otherwise leaves the object
+  on its current processor to limit migrations. It takes an optional
+  argument ``tolerance``, which specifies the tolerance it should allow
+  above the maximum load Greedy would produce. (Old: ``+balancer GreedyRefineLB``)
 
-In hierarchical approaches, processors are divided into independent
-autonomous sets of processor groups and these groups are organized in
-hierarchies, thereby decentralizing the load balancing task. Different
-strategies can be used to balance the load on processors inside each
-processor group, and processors across groups in a hierarchical fashion.
+- **RefineA, RefineB**: Moves objects away from the most overloaded
+  processors to reach average, limits the number of objects
+  migrated. RefineA allows a heavy object to go to any of the lightly
+  loaded PEs, while RefineB always moves the heaviest remaining object
+  to the lightest loaded PE. (Old: ``+balancer RefineLB`` runs RefineA)
 
-Listed below are some of the available non-trivial centralized load
-balancers and their brief descriptions:
+Listed below are load balancers intended for diagnostic purposes:
 
--  **GreedyLB**: Uses a greedy algorithm that always assigns the
-   heaviest object to the least loaded processor.
+- **Dummy**: Does nothing, does not move objects at all. (Old: ``+balancer DummyLB``)
 
--  **GreedyRefineLB**: Uses a greedy algorithm that assigns the heaviest
-   object to the least loaded processor when the benefit outweighs the
-   migration cost, otherwise leaves the object on its current processor.
-   It takes an optional command-line argument *+LBPercentMoves*,which
-   specifies the percentage of migrations that can be tolerated.
+- **Random**: Randomly assigns objects to processors. (Old: ``+balancer RandCentLB``)
 
--  **TopoCentLB**: Extends the greedy algorithm to take processor
-   topology into account.
+- **Rotate**: Moves objects to the next available PE every time it is
+  called. It is useful for debugging PUP routines and other migration
+  related bugs. (Old: ``+balancer RotateLB``)
 
--  **RefineLB**: Moves objects away from the most overloaded processors
-   to reach average, limits the number of objects migrated.
+However, not all non-distributed load balancers are currently
+supported by TreeLB, namely the centralized communication-aware load
+balancers:
 
--  **RefineSwapLB**: Moves objects away from the most overloaded
-   processors to reach average. In case it cannot migrate an object from
-   an overloaded processor to an underloaded processor, it swaps objects
-   to reduce the load on the overloaded processor. This strategy limits
-   the number of objects migrated.
+- **RecBipartLB**: Uses recursive bipartitioning to partition the
+  object communication graph.
 
--  **RefineTopoLB**: Same idea as in RefineLB, but takes processor
-   topology into account.
+- **MetisLB**: Uses `METIS
+  <http://glaros.dtc.umn.edu/gkhome/metis/metis/overview>`__ to
+  partition the object communication graph.
 
--  **BlockLB**: This strategy does a blocked distribution of objects to
-   processors.
+..
+   - **ScotchLB**: Uses the `SCOTCH
+     <http://www.labri.fr/perso/pelegrin/scotch/>`__ library for
+     partitioning the object communication graph, while also taking
+     object load imbalance into account.
 
--  **ComboCentLB**: A special load balancer that can be used to combine
-   any number of centralized load balancers mentioned above.
-
-Listed below are some of the communication-aware load balancers:
-
--  **MetisLB**: Uses `METIS <http://glaros.dtc.umn.edu/gkhome/metis/metis/overview>`__
-   to partition the object communication graph.
-
--  **ScotchLB**: Uses the `SCOTCH <http://www.labri.fr/perso/pelegrin/scotch/>`__
-   library for partitioning the object
-   communication graph, while also taking object load imbalance into
-   account.
-
--  **GreedyCommLB**: Extends the greedy algorithm to take the
-   communication graph into account.
-
--  **RefineCommLB**: Same idea as in RefineLB, but takes communication
-   into account.
+In distributed approaches, load data is only exchanged among
+neighboring processors. There is no global synchronization. However,
+they will not, in general, provide an immediate restoration for load
+balance - the process is iterated until the load balance can be
+achieved.
 
 Listed below are the distributed load balancers:
-
--  **NeighborLB**: A neighborhood load balancer in which each processor
-   tries to average out its load only among its neighbors.
-
--  **WSLB**: A load balancer for workstation clusters, which can detect
-   load changes on desktops (and other timeshared processors) and adjust
-   load without interfering with other’s use of the desktop.
 
 -  **DistributedLB**: A load balancer which uses partial information
    about underloaded and overloaded processors in the system to do
    probabilistic transfer of load. This is a refinement based strategy.
 
-An example of a hierarchical strategy can be found in:
-
--  **HybridLB**: This calls GreedyLB at the lower level and RefineLB at
-   the root.
-
-Listed below are load balancers for debugging purposes:
-
--  **RandCentLB**: Randomly assigns objects to processors;
-
--  **RotateLB**: This strategy moves objects to the next available PE
-   every time it is called. It is useful for debugging PUP routines and
-   other migration related bugs.
+Custom strategies that are based on CentralLB or HybridBaseLB will
+continue to be supported for now, but support for these will likely be
+dropped in a future release.
 
 Users can choose any load balancing strategy they think is appropriate
-for their application. We recommend using GreedyRefineLB with
+for their application. We recommend using TreeLB with GreedyRefine for
 applications in general. For applications where the cost of migrating
 objects is very high, say, due to frequent load balancing to handle
-frequent load changes or due to size of data in the object being large,
-a strategy which favors migration minimization at the cost of balance
-(eg: RefineLB) is more suitable. DistributedLB and HybridLB are suitable
-for large number of nodes. Communication-aware load balancers like
-MetisLB and ScotchLB are suitable for communication intensive
-applications. RotateLB and RandCentLB are more useful for debugging
-object migrations. The compiler and runtime options are described in
+frequent load changes or due to size of data in the object being
+large, a strategy which favors migration minimization at the cost of
+balance (eg: RefineLB) is more suitable. DistributedLB is suitable for
+a large number of nodes. Communication-aware load balancers like
+MetisLB and RecBipartLB are suitable for communication intensive
+applications. The compiler and runtime options are described in
 section :numref:`lbOption`.
 
-**TreeLB and its Configuration**
+.. _treeLb:
+
+TreeLB and its Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 TreeLB allows for user-configurable hierarchical load balancing. While
 the legacy centralized strategies above are still supported, TreeLB
 allows load balancing to be performed at different levels and
 frequencies in a modular way. TreeLB includes several kinds of trees:
-the 2-level tree consists of PE and root levels (essentially the same as
-centralized load balancing), the 3-level tree consists of PE,
-process, and root levels, and the 4-level tree consists of
-PE, process, process group, and root levels (process groups are
+the 2-level tree consists of PE and root levels (essentially the same
+as centralized load balancing), the 3-level tree consists of PE,
+process, and root levels, and the 4-level tree consists of PE,
+process, process group, and root levels (process groups are
 collections of consecutive processes; the number of groups is
-configurable, see below). Each level only balances
-load within its corresponding domain; for example, for the 3-level
-PE-Process-Root tree during process steps, each process runs the
-specified LB strategy over only the PEs and objects contained within
-the process, while, at root steps, the root strategy is run over all
-PEs and objects in the job. The load balancing strategy to be used at
-each level and frequency at which to invoke LB at each level can be
-specified using a JSON configuration file with name ``treelb.json`` or
-by specifying the JSON file name using command line option
-``+TreeLBFile``. We provide examples of some configuration files below:
+configurable, see below). Each level only balances load within its
+corresponding domain; for example, for the 3-level PE-Process-Root
+tree: during process steps, each process runs the specified LB
+strategy over only the PEs and objects contained within the process,
+while, at root steps, the root strategy is run over all PEs and
+objects in the job. Supposing the root step frequency is 3, the root
+strategy is GreedyRefine, and the process strategy is Greedy, LB would
+proceed as follows:
+
+=======    ===================================================
+LB Step    LB Action
+=======    ===================================================
+0          Each process runs Greedy over its own PEs
+1          Each process runs Greedy over its own PEs
+2          Root PE runs GreedyRefine over all PEs
+3          Each process runs Greedy over its own PEs
+...        ...
+=======    ===================================================
+
+The load balancing strategy to be used at each level and frequency at
+which to invoke LB at each level can be specified using a JSON
+configuration file with name ``treelb.json`` or by specifying the JSON
+file name using command line option ``+TreeLBFile``. We provide
+examples of some configuration files below:
 
 Creating a 2-level tree that first uses the Greedy strategy and then
 the GreedyRefine strategy at the root:
@@ -2774,15 +2767,18 @@ steps:
     }
   }
 
-Creating a 4-level tree that uses the GreedyRefine strategy at the process
-and process group levels. The number of user-specified process groups is four in
-this example. A strategy is not allowed at root level for a 4-level tree since
-communicating all object load information to the root can be expensive given
-the size of the PE tree. Load is balanced at the process group level
-every five steps and at the root level every ten steps. Note also that
-the process group usage of GreedyRefine provides a custom parameter to
-the strategy. This parameter will only be used for the process group
-level version of GreedyRefine, not the process level version.
+Creating a 4-level tree that uses the GreedyRefine strategy at the
+process and process group levels. The number of user-specified process
+groups is four in this example. A strategy is not allowed at root
+level for a 4-level tree since communicating all object load
+information to the root can be expensive given the size of the PE
+tree. Instead, a scheme where coarsened representations of the
+subtrees exchange load tokens is used at the root level. Load is
+balanced at the process group level every five steps and at the root
+level every ten steps. Note also that the process group usage of
+GreedyRefine provides a custom parameter to the strategy. This
+parameter will only be used for the process group level version of
+GreedyRefine, not the process level version.
 
 .. code-block:: json
 
@@ -2868,7 +2864,7 @@ following tree level configuration parameters:
   - ``GreedyRefine``:
 
     - ``tolerance``: Float specifying the tolerance GreedyRefine should
-      allow above the maximum load of Greedy.
+      allow above the maximum load of Greedy. (default = ``1``)
 
 **Metabalancer to automatically schedule load balancing**
 
