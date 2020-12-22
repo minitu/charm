@@ -1,4 +1,3 @@
-
 /**
  * \addtogroup CkLdb
 */
@@ -42,22 +41,23 @@ int numProcessAfterRestart;
 int mynewpe=0;
 #endif
 CkGroupID loadbalancer;
-int * lb_ptr;
 bool load_balancer_created;
 
-CreateLBFunc_Def(CentralLB, "CentralLB base class")
+// Replicate the CreateLBFunc_Def define from BaseLb.h to set the shown flag to false so
+// the CentralLB base class isn't shown in the LB help
+void CreateCentralLB(const CkLBOptions& opts) { CProxy_CentralLB::ckNew(opts); }
+
+BaseLB* AllocateCentralLB(void) { return new CentralLB((CkMigrateMessage*)nullptr); }
+
+static void lbinit(void)
+{
+  LBRegisterBalancer("CentralLB", CreateCentralLB, AllocateCentralLB, "CentralLB base class", false);
+}
 
 static int broadcastThreshold = 32;
 
 static void getPredictedLoadWithMsg(BaseLB::LDStats* stats, int count, 
 		             LBMigrateMsg *, LBInfo &info, int considerComm);
-
-/*
-void CreateCentralLB()
-{
-  CProxy_CentralLB::ckNew(0);
-}
-*/
 
 void CentralLB::initLB(const CkLBOptions &opt)
 {
