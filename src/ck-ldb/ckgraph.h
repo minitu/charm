@@ -27,13 +27,13 @@ public:
       : id(i), _overhead(ov), _totalLoad(tl), _pe_speed(sp), available(avail)
   {
   }
-  inline int getProcId() const { return id; }
-  inline void setProcId(int _id) { id = _id; }
-  inline double getTotalLoad() const { return _totalLoad; }
-  inline double& overhead() { return _overhead; }
-  inline double& totalLoad() { return _totalLoad; }
-  inline double& pe_speed() { return _pe_speed; }
-  inline bool isAvailable() const { return available; }
+  int getProcId() const { return id; }
+  void setProcId(int _id) { id = _id; }
+  double getTotalLoad() const { return _totalLoad; }
+  double& overhead() { return _overhead; }
+  double& totalLoad() { return _totalLoad; }
+  double& pe_speed() { return _pe_speed; }
+  bool isAvailable() const { return available; }
 
 protected:
   int id;             // CkMyPe of the processor
@@ -47,7 +47,7 @@ class ProcArray
 {
 public:
   ProcArray(BaseLB::LDStats* stats);
-  inline double getAverageLoad() const { return avgLoad; }
+  double getAverageLoad() const { return avgLoad; }
   void resetTotalLoad();
 
   // vector containing the list of processors
@@ -63,10 +63,10 @@ class Edge
 
 public:
   Edge(int _id, int _msgs, int _bytes) : id(_id), msgs(_msgs), bytes(_bytes) {}
-  inline int getNeighborId() const { return id; }
-  inline int getNumMsgs() const { return msgs; }
-  inline int getNumBytes() const { return bytes; }
-  inline void setNumBytes(int _bytes) { bytes = _bytes; }
+  int getNeighborId() const { return id; }
+  int getNumMsgs() const { return msgs; }
+  int getNumBytes() const { return bytes; }
+  void setNumBytes(int _bytes) { bytes = _bytes; }
 
 private:
   int id;     // id of the neighbor = index of the neighbor vertex
@@ -85,9 +85,9 @@ public:
   {
   }
 
-  inline int getNumMsgs() const { return msgs; }
-  inline int getNumBytes() const { return bytes; }
-  inline void setNumBytes(int _bytes) { bytes = _bytes; }
+  int getNumMsgs() const { return msgs; }
+  int getNumBytes() const { return bytes; }
+  void setNumBytes(int _bytes) { bytes = _bytes; }
 
   std::vector<int> destList;
 
@@ -107,11 +107,11 @@ public:
   {
   }
 
-  inline int getSrc() const { return src; }
-  inline int getOffset() const { return offset; }
-  inline int getNumMsgs() const { return msgs; }
-  inline int getNumBytes() const { return bytes; }
-  inline void setNumBytes(int _bytes) { bytes = _bytes; }
+  int getSrc() const { return src; }
+  int getOffset() const { return offset; }
+  int getNumMsgs() const { return msgs; }
+  int getNumBytes() const { return bytes; }
+  void setNumBytes(int _bytes) { bytes = _bytes; }
 
 private:
   int src;     // src of multicast being received
@@ -136,12 +136,12 @@ public:
   {
   }
 
-  inline int getVertexId() const { return id; }
-  inline double getVertexLoad() const { return compLoad; }
-  inline int getCurrentPe() const { return currPe; }
-  inline int getNewPe() const { return newPe; }
-  inline void setNewPe(int _newpe) { newPe = _newpe; }
-  inline bool isMigratable() const { return migratable; }
+  int getVertexId() const { return id; }
+  double getVertexLoad() const { return compLoad; }
+  int getCurrentPe() const { return currPe; }
+  int getNewPe() const { return newPe; }
+  void setNewPe(int _newpe) { newPe = _newpe; }
+  bool isMigratable() const { return migratable; }
 
   // list of vertices this vertex sends messages to and receives from
   std::vector<Edge> sendToList;

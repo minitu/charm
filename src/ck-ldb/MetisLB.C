@@ -22,7 +22,8 @@ CreateLBFunc_Def(MetisLB, "Use Metis(tm) to partition object graph")
     : CBase_MetisLB(opt)
 {
   lbname = "MetisLB";
-  if (CkMyPe() == 0 && !quietModeRequested) CkPrintf("CharmLB> MetisLB created.\n");
+  if (CkMyPe() == 0 && !quietModeRequested)
+    CkPrintf("CharmLB> MetisLB created.\n");
 }
 
 void MetisLB::work(LDStats* stats)
@@ -148,7 +149,8 @@ void MetisLB::work(LDStats* stats)
 
   for (int i = 0; i < numVertices; i++)
   {
-    if (pemap[i] != ogr->vertices[i].getCurrentPe()) ogr->vertices[i].setNewPe(pemap[i]);
+    if (pemap[i] != ogr->vertices[i].getCurrentPe())
+      ogr->vertices[i].setNewPe(pemap[i]);
   }
 
   /** ============================== CLEANUP ================================ */
