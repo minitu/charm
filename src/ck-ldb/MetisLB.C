@@ -11,6 +11,7 @@
 
 #include "MetisLB.h"
 #include "ckgraph.h"
+#include <algorithm>
 #include <cstddef>
 #include <metis.h>
 
@@ -48,16 +49,19 @@ void MetisLB::work(LDStats* stats)
   {
     for (auto& outEdge : vertex.sendToList)
     {
-      const auto vert = outEdge.getNeighborId();
-      for (int k = 0; k < vertex.recvFromList.size(); k++)
-      {
-        if (vertex.recvFromList[k].getNeighborId() == vert)
-        {
-          outEdge.setNumBytes(outEdge.getNumBytes() +
-                                  vertex.recvFromList[k].getNumBytes());
-          vertex.recvFromList.erase(vertex.recvFromList.begin() + k);
-        }
-      }
+      const auto nId = outEdge.getNeighborId();
+      auto& inList = vertex.recvFromList;
+
+      // Partition the incoming edges into {not from vertex nId}, {from vertex nId}
+      const auto it = std::partition(inList.begin(), inList.end(), [nId](const Edge& e) {
+        return e.getNeighborId() != nId;
+      });
+      // Add the bytes received from vertex nId to the outgoing edge to nId, and then
+      // remove those incoming edges
+      std::for_each(it, inList.end(), [&outEdge](const Edge& e) {
+        outEdge.setNumBytes(outEdge.getNumBytes() + e.getNumBytes());
+      });
+      inList.erase(it, inList.end());
     }
   }
 
